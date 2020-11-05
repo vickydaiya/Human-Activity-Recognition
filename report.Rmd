@@ -1,0 +1,178 @@
+---
+title: "Prediction Assignment"
+author: "Vicky Daiya"
+date: "31/10/2020"
+output: html_document
+---
+
+## Overview
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.  
+
+In this project, data is collected from accelerometers on the belt, forearm, arm, and dumbell. Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E)
+
+The goal is to predict how the activity was performed (class A,B,C,D and E) for testing data by developing models on the training data.
+
+## Loading libraries
+
+Caret library is used for training the models, creating data partitions, making predictions and for measuring accuracy of models
+
+```{r libs}
+#loading required libraries
+
+library(caret) #for fitting models on training data, finding accuracy and predicting on test set
+```
+
+## Loading the data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har.
+
+```{r loading,cache=TRUE}
+url_train <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(url_train,"train_data.csv")
+train_data <- read.csv("train_data.csv")
+
+url_test <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(url_test,"test_data.csv")
+test_data <- read.csv("test_data.csv")
+```
+
+## Cleaning data
+
+```{r}
+dim(train_data)
+```
+
+The training data will only be used for cleaning. Testing data shall remain untouched. Looking at the dimensions of training data, there are 160 columns and 19622 rows. However when we look at the dataframe, a lot of entries are missing/have NA values.   
+
+First, the missing data or blank data is replaced by NA. Then for each column the percentage of NA values in that column is calculated. If the NA percentage in that column is more than 50%, then it will be removed since data cannot be imputed correctly for such large number of NA values.  
+
+```{r cleaning}
+
+#replacing blank values with NA
+train_data[train_data==""] <- NA
+
+#removing columns from training data which have more than 50% NA values 
+col_na_percentages <- vector()
+for(i in 1:ncol(train_data)) {col_na_percentages[i] <- sum(is.na(train_data[,i]))/nrow(train_data)}
+indices <- which(col_na_percentages>=0.5)
+train_data <- train_data[,-indices]
+
+dim(train_data)
+```
+
+After this step,60 columns still remain. So we do the near zero variance test. Any column that has near zero variance is unnecessary for training the model and hence those columns will be removed.
+
+```{r}
+
+#removing columns from training data which have near zero variance
+nzv <- nearZeroVar(train_data)
+train_data <- train_data[,-nzv]
+
+dim(train_data)
+```
+
+1 column is removed 
+
+At last, the first 5 columns (x, user_name, raw_timestamp_part_1, raw_timestamp_part_2 and cvtd_timestamp) are removed since they do not have impact on the variable to be predicted. 
+
+```{r}
+
+#removing the first five columns as they are unimportant for training
+train_data$X <- NULL
+train_data$user_name <- NULL
+train_data$raw_timestamp_part_1 <- NULL
+train_data$raw_timestamp_part_2 <- NULL
+train_data$cvtd_timestamp <- NULL
+
+dim(train_data)
+```
+
+At the end, the training data has 19622 rows and 54 columns
+
+## Making training and test sets from training data
+
+Training data is split further into training and testing sets in order to calculate out of sample error and in sample error to determine the best model. 70% from training data will be used for training and remaining will be used for testing. 
+
+```{r}
+inTrain <- createDataPartition(y=train_data$classe,p=0.7,list=FALSE)
+training <- train_data[inTrain,]
+testing <- train_data[-inTrain,]
+nrow(training)
+nrow(testing)
+```
+
+## Fitting models
+
+For this project we will use two different algorithms, classification trees and random forests, to predict the outcome.
+
+1. Classification trees
+2. Generalized Boosted Model 
+3. Random forests
+
+```{r rpart, cache=TRUE}
+Controlfuncn <- trainControl(method = "cv", number = 5, allowParallel = TRUE)
+
+modelrpart <- train(classe~., data = training, method = "rpart", trControl = Controlfuncn)
+
+preds_rpart_in <- predict(modelrpart)
+confusionMatrix(preds_rpart_in,factor(training$classe))
+
+preds_rpart_out <- predict(modelrpart,newdata=testing)
+confusionMatrix(preds_rpart_out,factor(testing$classe))
+
+```
+
+The in sample error rate of classification tree model is 0.4268.(1-accuracy i.e. 1-0.5732)  
+The out of sample error rate of classification tree model is 0.4331.
+
+```{r gbm train,cache=TRUE,results=FALSE}
+
+modelgbm <- train(classe~., data = training, method = "gbm", trControl = Controlfuncn)
+
+```
+
+```{r gbm results}
+preds_gbm_in <- predict(modelgbm)
+confusionMatrix(preds_gbm_in,factor(training$classe))
+
+preds_gbm_out <- predict(modelgbm,newdata=testing)
+confusionMatrix(preds_gbm_out,factor(testing$classe))
+```
+
+The in sample error rate of generalized boosted model is 0.0079.  
+The out of sample error rate of generalized boosted model is 0.01.
+
+
+```{r rf, cache=TRUE}
+
+
+modelrf <- train(classe~., data = training, method = "rf", trControl = Controlfuncn)
+
+preds_rf_in <- predict(modelrf)
+confusionMatrix(preds_rf_in,factor(training$classe))
+
+preds_rf_out <- predict(modelrf,newdata=testing)
+confusionMatrix(preds_rf_out,factor(testing$classe))
+```
+
+The in sample error rate of random forest model is 0.  
+The out of sample error rate of random forest model is 0.002.  
+
+Thus it can be clearly seen that the error rate of a random forest model is very less and hence it is the most accurate model for our data.  
+Ensembling of models is not required for this project since the accuracy by a single model is very high and sufficent.  
+
+Now predicting the classe variable (class) for testing data using the random forest model above.
+
+```{r predict}
+predict(modelrf,newdata = test_data)
+```
+
